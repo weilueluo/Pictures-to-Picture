@@ -1,7 +1,16 @@
-import sys
-sys.stdout.reconfigure(encoding='utf-8')
 
+import os
+import sys
+import time
+import math
+import pickle
+import argparse
+from glob import glob
 from PIL import Image
+from itertools import repeat
+from multiprocessing import Pool
+
+sys.stdout.reconfigure(encoding='utf-8')
 
 class Image_:
 
@@ -32,12 +41,6 @@ class Image_:
 
         return (r_avg, g_avg, b_avg)
 
-
-
-from glob import glob
-from multiprocessing import Pool
-import os, time
-from itertools import repeat
 
 class ImageDatabase:
     def __init__(self, folder, size):
@@ -86,32 +89,76 @@ class ImageDatabase:
         return len(self.files)
 
 
-import math
-def make_from(img, folder, amountx, amounty):
-    width, height = img.size
-    total_chunks = amountx * amounty
-    print('result dimension:', width, height)
-    print('total chunks:', total_chunks)
-    chunk_width = math.ceil(width / amountx)
-    chunk_height = math.ceil(height / amounty)
-    if chunk_width < 1 or chunk_height < 1:
-        raise ValueError('width or height for each small piece of images is less than 1px:', width, height, '/', amountx, amounty)
+def _load_database(folder, chunk_width, chunk_height):
 
-
+    file_name = folder + '.imagedatabase'
     database = ImageDatabase(folder, (chunk_width, chunk_height))
-
     files_found = database.files_size
+    total_chunks = chunk_width * chunk_height
+
+    if os.path.exists(file_name):
+        print('found existing database:', file_name)
+        try:
+            with open(file_name, 'rb') as file:
+                existing_database = pickle.loads(file.read())
+
+            files_in_old_database = database.files_size
+
+            if files_found == files_in_old_database:
+                print('using existing database')
+                return existing_database
+
+            while True:
+                ans = input('existing database has different number of images as in specified folder, old:{}, folder:{}, use existing? [y/n]:'.format(files_in_old_database, files_found))
+                if ans == 'y':
+                    return existing_database
+                elif ans == 'n':
+                    break
+                print('Please give answer as \'y\' or \'n\'')
+
+        except pickle.PickleError as e:
+            print('failed to load database:', file_name, 'due to:', str(e))
+            print('creating new database from given folder')
+
+
+
     if total_chunks > files_found:
         raise ValueError('size of database is not enough:', total_chunks, '>', files_found)
 
     if total_chunks > files_found / 2:
         print('database is small for', total_chunks, 'pieces:', files_found, 'may get bad result')
 
-
     start_time = time.time()
     database.generate_images()
     end_time = time.time()
     print('Time taken:', str(end_time - start_time) + 's')
+
+    try:
+        with open(file_name, 'wb') as file:
+            pickle.dump(database, file)
+
+        print('database saved as:', file_name)
+    except pickle.UnpicklingError as e:
+        print('failed to save database:', file_name)
+
+    return database
+
+
+def make_from(img, folder, amountx, amounty):
+
+    width, height = img.size
+    total_chunks = amountx * amounty
+
+    print('result dimension:', width, height)
+    print('total chunks:', total_chunks)
+
+    chunk_width = math.ceil(width / amountx)
+    chunk_height = math.ceil(height / amounty)
+
+    if chunk_width < 1 or chunk_height < 1:
+        raise ValueError('width or height for each small piece of images is less than 1px:', width, height, '/', amountx, amounty)
+
+    database = _load_database(folder, chunk_width, chunk_height)
 
     chunk_count = 0
     background = Image.new('RGB', img.size, 'black')
@@ -127,15 +174,25 @@ def make_from(img, folder, amountx, amounty):
             database.remove(best_match)
             print('\r >>>', chunk_count, '/' ,total_chunks, '=> {}%'.format(math.ceil(chunk_count / total_chunks * 100)),  end='')
     print(' done')
+
     return background
 
 
 def main():
-    input_file = 'pic.jpg'
-    output_file = 'output{}.jpg'
-    database_folder = 'imgs'
+
+    parser = argparse.ArgumentParser(description='build image from images')
+    parser.add_argument('source', help='the image to stimulate')
+    parser.add_argument('folder', help='the folder containing images used to stimulate the source')
+    parser.add_argument('destination', help='the base name of the output file, not including extension')
+    parser.add_argument('amountx', type=int, help='the number of pieces to break down width')
+    parser.add_argument('amounty', type=int, help='the number of pieces to break down height')
+    args = parser.parse_args()
+
+    input_file = args.source
+    output_file = args.destination + '{}.jpg'
+    database_folder = args.folder
     src = Image.open(input_file)
-    background = make_from(src, database_folder, 60, 80)
+    background = make_from(src, database_folder, args.amountx, args.amounty)
     background.save('background.jpg')
     for blend_percent in range(0, 10):
         blend_percent = blend_percent / 10
