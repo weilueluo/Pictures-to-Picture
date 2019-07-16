@@ -1,45 +1,14 @@
 import sys
+sys.stdout.reconfigure(encoding='utf-8')
 
 from PIL import Image
 
-sys.stdout.reconfigure(encoding='utf-8')
-
-
-from glob import glob
-
-
-
-
-
-def center_crop(img, new_width, new_height):
-    width, height = img.size
-    if width < new_width or height < new_height:
-        raise ValueError('width/height must not less than new width/new height for cropping:', width, '<', new_width, 'or', height, '<', new_height)
-    topy = (height - new_height) / 2
-    topx = (width - new_width) / 2
-    btmx = width - topx
-    btmy = height - topy
-    return img.crop((topx,topy,btmx,btmy))
-
-
-def trim_to_ratio(img, width_ratio, height_ratio):
-    width, height = img.size
-    if width < width_ratio or height < height_ratio:
-        raise ValueError('width/height must not less than width ratio/ height ratio for trimming:', width, '<', width_ratio, 'or', height, '<', height_ratio)
-
-    width_factor = width / width_ratio
-    height_factor = height / height_ratio
-
-    if height_factor < width_factor:
-        width = int(height / height_ratio * width_ratio)
-        return center_crop(img, width, height)
-    else:
-        height = int(width / width_ratio * height_ratio)
-        return center_crop(img, width, height)
-
 class Image_:
 
-    def __init__(self, image, width, height):
+    def __init__(self, tuple_of_inputs):
+        image = tuple_of_inputs[0]
+        width = tuple_of_inputs[1]
+        height = tuple_of_inputs[2]
         if isinstance(image, Image.Image):
             self.img = image
         else:
@@ -67,72 +36,106 @@ class Image_:
         return (r_avg, g_avg, b_avg)
 
 
+
+from glob import glob
+from multiprocessing import Pool
+import os
 from itertools import repeat
+
 class ImageDatabase:
     def __init__(self, folder, size):
-        self.size = size
-        width = self.size[0]
-        height = self.size[1]
-        pics_files = glob(folder + '/*[jpg|png]')
-        print('pics found:', len(pics_files))
-        self.imgs = list(map(Image_, pics_files, repeat(width), repeat(height)))
-        print('self.imgs:', len(self.imgs))
+        print('Creating database from folder:', folder)
+        # width and height for each images in this database
+        self.width = size[0]
+        self.height = size[1]
+        self.files = glob(folder + '/*[jpg|png]')
+        self.imgs = []
+        self.curr_sort_object = None
+        print('Pictures found:', self.files_size)
 
-    def sort_by_avg_rgb(img):
-        sum = pow(img.avg_r - ImageDatabase.curr_other.avg_r, 2) + pow(img.avg_b - ImageDatabase.curr_other.avg_g, 2) + pow(img.avg_b - ImageDatabase.curr_other.avg_b, 2)
+    def _sort_by_avg_rgb_diff(img):
+        # https://en.wikipedia.org/wiki/Color_difference
+        # Euclidean Formula
+        sum = pow(img.avg_r - ImageDatabase.curr_sort_object.avg_r, 2) \
+            + pow(img.avg_g - ImageDatabase.curr_sort_object.avg_g, 2) \
+            + pow(img.avg_b - ImageDatabase.curr_sort_object.avg_b, 2)
         return pow(sum, 0.5)
 
 
+    def generate_images(self):
+        print('Processing Pictures found ...')
+        cpus = os.cpu_count()
+        total_files = self.files_size
+        chunksize = total_files // cpus ** 2
+        if chunksize < cpus:
+            chunksize = cpus
+        pool = Pool(processes=cpus)
+        for index, item in enumerate(pool.imap_unordered(Image_, zip(self.files, repeat(self.width), repeat(self.height)), chunksize)):
+            print('\r >>> {} / {} => {}%'.format(index, total_files, math.ceil((index / total_files) * 100)), end='')
+            self.imgs.append(item)
+        print(' done')
+
     def find_closest(self, other):
-        other = Image_(other, self.size[0], self.size[1])
-        ImageDatabase.curr_other = other
-        self.imgs.sort(key=ImageDatabase.sort_by_avg_rgb)
-        print('len:', len(self.imgs), end='')
+        other = Image_((other, self.width, self.height))
+        ImageDatabase.curr_sort_object = other
+        self.imgs.sort(key=ImageDatabase._sort_by_avg_rgb_diff)
         return self.imgs[0]
 
     def remove(self, img):
         self.imgs.remove(img)
 
+    @property
+    def files_size(self):
+        return len(self.files)
+
+
 import math
-def test(img, amountx, amounty):
-    folder = 'pixiv_img'
+def test(img, folder, amountx, amounty):
     width, height = img.size
     chunk_width = math.ceil(width / amountx)
     chunk_height = math.ceil(height / amounty)
-    # print('each chunk:', chunk_width, chunk_height)
     if chunk_width < 1 or chunk_height < 1:
-        raise ValueError('width or height for each chunk is less than 1:', width, height)
+        raise ValueError('width or height for each small piece of images is less than 1px:', width, height, '/', amountx, amounty)
 
-    chunksize = (chunk_width, chunk_height)
-    print('Generating database from folder:', folder)
+
     database = ImageDatabase(folder, (chunk_width, chunk_height))
+    total_chunks = amountx * amounty
+    files_found = database.files_size
+    if total_chunks > files_found:
+        raise ValueError('Size of database is not enough:', total_chunks, ':', files_found)
 
-    chunks = []
+    database.generate_images()
+
     chunk_count = 0
-    background = Image.new('RGB', img.size, 'white')
-    print('Generating image from database')
+    background = Image.new('RGB', img.size, 'black')
+    print('Creating image from database')
     for h in range(0, height, chunk_height):
         for w in range(0, width, chunk_width):
-            print('\r', w, h, '=>', width, height, end='')
             btmx = w + chunk_width
             btmy = h + chunk_height
             # print(w,h,btmx,btmy)
             curr_chunk = img.crop((w, h, btmx, btmy))
-            chunks.append(curr_chunk)
             chunk_count += 1
-            # curr_chunk.save('chunks/chunk_'+ str(chunk_count) + '.jpg')
             best_match = database.find_closest(curr_chunk)
             background.paste(best_match.img, (w, h))
             database.remove(best_match)
-    print('\rDone')
+            print('\r >>>', chunk_count, '/' ,total_chunks, '=> {}%'.format(math.ceil(chunk_count / total_chunks * 100)),  end='')
+    print(' done')
     return background
 
 
 def main():
-    src = Image.open('img/pic.png')
-    background = test(src, 30, 40)
-    image = Image.blend(src, background, 0.60)
-    image.save('output.jpg')
+    input_file = 'img/pic.png'
+    output_file = 'output{}.jpg'
+    database_folder = 'imgs'
+    src = Image.open(input_file)
+    background = test(src, database_folder, 60, 80)
+    background.save('background.jpg')
+    for blend_percent in range(0, 10):
+        blend_percent = blend_percent / 10
+        image = Image.blend(src, background, blend_percent)
+        image.save(output_file.format(blend_percent))
+    print('done =>', output_file)
 
 if __name__ == '__main__':
     main()
