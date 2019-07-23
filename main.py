@@ -103,22 +103,22 @@ class ImageDatabase:
         return len(self.files)
 
     def crop(self, width, height):
-        print('cropping images ...')
+        print('re-adjusting database images ...')
         total_imgs = len(self.imgs)
         chunksize = ImageDatabase.get_chunksize(total_imgs)
         pool = Pool(processes=os.cpu_count())
         cropped_imgs = []
-        for index, img in enumerate(self.imgs):
+        for index, img in enumerate(list(self.imgs)):
             img.crop(width, height)
             cropped_imgs.append(img)
             self.imgs.remove(img)
-            print('\r >>> {} / {} => {}%'.format(index, total_imgs, math.ceil((index / total_imgs) * 100)), end='')
+            print('\r >>> {} / {} => {}%'.format(index+1, total_imgs, math.ceil(((index+1) / total_imgs) * 100)), end='')
         self.imgs = cropped_imgs
         print(' done')
 
 
 
-def _load_database(folder, chunk_width, chunk_height):
+def _load_database(folder, chunk_width, chunk_height, repeat):
     file_name = folder + '.imagedatabase'
     database = ImageDatabase(folder, (chunk_width, chunk_height))
     files_found = database.files_size
@@ -152,10 +152,10 @@ def _load_database(folder, chunk_width, chunk_height):
             print('creating new database from given folder')
 
 
-    if total_chunks > files_found:
+    if not repeat and total_chunks > files_found:
         raise ValueError('size of database is not enough:', total_chunks, '>', files_found)
 
-    if total_chunks > files_found / 4:
+    if not repeat and total_chunks > files_found / 4:
         print('database is not optimal for', total_chunks, 'pieces from', files_found, 'try set to > 1:4 if possible')
 
     start_time = time.time()
@@ -174,35 +174,38 @@ def _load_database(folder, chunk_width, chunk_height):
     return database
 
 
-def make_from(img, folder, amountx, amounty):
+def make_from(img, folder, amountx, amounty, repeat=True):
 
     width, height = img.size
-    total_chunks = amountx * amounty
-
-    print('result dimension:', width, height)
-    print('total chunks:', total_chunks)
 
     chunk_width = math.ceil(width / amountx)
     chunk_height = math.ceil(height / amounty)
 
+    total_chunks =  math.ceil(width / chunk_width) *  math.ceil(height / chunk_height)
+
+    print('result dimension:', width, height)
+    print('total chunks:', total_chunks)
+    print('repeat:', repeat)
+
     if chunk_width < 1 or chunk_height < 1:
         raise ValueError('width or height for each small piece of images is less than 1px:', width, height, '/', amountx, amounty)
 
-    database = _load_database(folder, chunk_width, chunk_height)
+    database = _load_database(folder, chunk_width, chunk_height, repeat)
 
     chunk_count = 0
     background = Image.new('RGB', img.size, 'black')
-    print('Creating image from database')
+    print('building image from database ...')
     for h in range(0, height, chunk_height):
         for w in range(0, width, chunk_width):
             btmx = w + chunk_width
             btmy = h + chunk_height
             curr_chunk = img.crop((w, h, btmx, btmy))
-            chunk_count += 1
             best_match = database.find_closest(curr_chunk)
             background.paste(best_match.img, (w, h))
-            database.remove(best_match)
-            print('\r >>>', chunk_count, '/' ,total_chunks, '=> {}%'.format(math.ceil(chunk_count / total_chunks * 100)),  end='')
+            if not repeat:
+                database.remove(best_match) # remove used images
+            chunk_count += 1
+            print('\r >>>', chunk_count, '/' , total_chunks, '=> {}%'.format(math.ceil(chunk_count / total_chunks * 100)),  end='')
     print(' done')
 
     return background
@@ -216,14 +219,15 @@ def main():
     parser.add_argument('destination', help='the base name of the output file, not including extension')
     parser.add_argument('amountx', type=int, help='the number of pieces to break down width')
     parser.add_argument('amounty', type=int, help='the number of pieces to break down height')
+    parser.add_argument('--repeat', help='allow build with repeating images')
     args = parser.parse_args()
 
     input_file = args.source
     output_file = args.destination + '{}.jpg'
     database_folder = args.folder
     src = Image.open(input_file)
-    background = make_from(src, database_folder, args.amountx, args.amounty)
-    background.save('background.jpg')
+    background = make_from(src, database_folder, args.amountx, args.amounty, repeat=args.repeat)
+    background.save(args.destination + '_background_{}.jpg'.format('repeat' if repeat else 'no_repeat'))
     for blend_percent in range(0, 10):
         blend_percent = blend_percent / 10
         image = Image.blend(src, background, blend_percent)
