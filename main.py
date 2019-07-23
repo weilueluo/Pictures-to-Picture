@@ -12,20 +12,21 @@ from multiprocessing import Pool
 
 sys.stdout.reconfigure(encoding='utf-8')
 
+DATABASE_IMG_SIZE = 100
+
 class Image_:
 
-    def __init__(self, tuple_of_inputs):
-        image = tuple_of_inputs[0]
-        width = tuple_of_inputs[1]
-        height = tuple_of_inputs[2]
+    def __init__(self, image, width, height):
         if isinstance(image, Image.Image):
-            self.img = image
+            img = image
         else:
             img = Image.open(image).convert('RGB')
-            self.img = img.resize((width, height))
-        self.avg_r, self.avg_g, self.avg_b = self._get_avg(self.img)
 
-    def _get_avg(self, img):
+        self.img = img.resize((width, height))
+        self.big_img = img.resize((DATABASE_IMG_SIZE,DATABASE_IMG_SIZE)) # FOR SAVING
+        self.avg_r, self.avg_g, self.avg_b = Image_._get_avg(self.img)
+
+    def _get_avg(img):
         bands = img.getdata()
         r_sum = 0
         g_sum = 0
@@ -41,16 +42,22 @@ class Image_:
 
         return (r_avg, g_avg, b_avg)
 
+    def factory(inputs):
+        return Image_(inputs[0], inputs[1], inputs[2])
+
+    def crop(self, width, height):
+        self.img = self.big_img.resize((width, height))
 
 class ImageDatabase:
-    def __init__(self, folder, size):
+    def __init__(self, folder, size, details=None):
         print('Creating database from folder:', folder)
-        # width and height for each images in this database
         self.width = size[0]
         self.height = size[1]
+        print('database images size: width', self.width, 'height', self.height)
+        self.curr_sort_object = None
+        # width and height for each images in this database
         self.files = glob(folder + '/*[jpg|png]')
         self.imgs = []
-        self.curr_sort_object = None
         print('Pictures found:', self.files_size)
 
     def _sort_by_avg_rgb_diff(img):
@@ -61,22 +68,29 @@ class ImageDatabase:
             + pow(img.avg_b - ImageDatabase.curr_sort_object.avg_b, 2)
         return pow(sum, 0.5)
 
+    def get_chunksize(files_count):
+        max_divider = 100 # 100%
+        files_per_divider = 0
+        while files_per_divider < 1 and max_divider >= 1:
+            files_per_divider = files_count // max_divider
+            max_divider -= 1
+        return files_per_divider
 
     def generate_images(self):
         print('Processing Pictures found ...')
         cpus = os.cpu_count()
         total_files = self.files_size
-        chunksize = total_files // cpus ** 2
+        chunksize = ImageDatabase.get_chunksize(total_files)
         if chunksize < cpus:
             chunksize = 1
         pool = Pool(processes=cpus)
-        for index, item in enumerate(pool.imap_unordered(Image_, zip(self.files, repeat(self.width), repeat(self.height)), chunksize)):
+        for index, item in enumerate(pool.imap_unordered(Image_.factory, zip(self.files, repeat(self.width), repeat(self.height)), chunksize)):
             print('\r >>> {} / {} => {}%'.format(index, total_files, math.ceil((index / total_files) * 100)), end='')
             self.imgs.append(item)
         print(' done')
 
     def find_closest(self, other):
-        other = Image_((other, self.width, self.height))
+        other = Image_(other, self.width, self.height)
         ImageDatabase.curr_sort_object = other
         self.imgs.sort(key=ImageDatabase._sort_by_avg_rgb_diff)
         return self.imgs[0]
@@ -88,9 +102,23 @@ class ImageDatabase:
     def files_size(self):
         return len(self.files)
 
+    def crop(self, width, height):
+        print('cropping images ...')
+        total_imgs = len(self.imgs)
+        chunksize = ImageDatabase.get_chunksize(total_imgs)
+        pool = Pool(processes=os.cpu_count())
+        cropped_imgs = []
+        for index, img in enumerate(self.imgs):
+            img.crop(width, height)
+            cropped_imgs.append(img)
+            self.imgs.remove(img)
+            print('\r >>> {} / {} => {}%'.format(index, total_imgs, math.ceil((index / total_imgs) * 100)), end='')
+        self.imgs = cropped_imgs
+        print(' done')
+
+
 
 def _load_database(folder, chunk_width, chunk_height):
-
     file_name = folder + '.imagedatabase'
     database = ImageDatabase(folder, (chunk_width, chunk_height))
     files_found = database.files_size
@@ -98,14 +126,17 @@ def _load_database(folder, chunk_width, chunk_height):
 
     if os.path.exists(file_name):
         print('found existing database:', file_name)
+        if chunk_width > DATABASE_IMG_SIZE or chunk_height > DATABASE_IMG_SIZE:
+            raise pickle.PicklingError('Database size does not satisfy requirement for this image, rebuilding ...')
         try:
             with open(file_name, 'rb') as file:
                 existing_database = pickle.loads(file.read())
 
-            files_in_old_database = database.files_size
+            files_in_old_database = existing_database.files_size
 
             if files_found == files_in_old_database:
                 print('using existing database')
+                existing_database.crop(chunk_width, chunk_height)
                 return existing_database
 
             while True:
@@ -116,17 +147,16 @@ def _load_database(folder, chunk_width, chunk_height):
                     break
                 print('Please give answer as \'y\' or \'n\'')
 
-        except pickle.PickleError as e:
+        except pickle.PicklingError as e:
             print('failed to load database:', file_name, 'due to:', str(e))
             print('creating new database from given folder')
-
 
 
     if total_chunks > files_found:
         raise ValueError('size of database is not enough:', total_chunks, '>', files_found)
 
-    if total_chunks > files_found / 2:
-        print('database is small for', total_chunks, 'pieces:', files_found, 'may get bad result')
+    if total_chunks > files_found / 4:
+        print('database is not optimal for', total_chunks, 'pieces from', files_found, 'try set to > 1:4 if possible')
 
     start_time = time.time()
     database.generate_images()
