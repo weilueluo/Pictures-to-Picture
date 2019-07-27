@@ -100,7 +100,7 @@ def make_from(img, folder, size, use_repeat=True):
             if btmx > width:
                 btmx = width
             if btmy > height:
-                btmY = height
+                btmy = height
             curr_chunk = img.crop((w, h, btmx, btmy))
             best_match = database.find_closest(curr_chunk)
             background.paste(best_match.img, (w, h))

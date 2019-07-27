@@ -214,16 +214,16 @@ class ImageDatabase(object):
         images = glob(image_folder + '/*' + postfix)
         total = len(images)
 
-        pool = Pool(processes=os.cpu_count())
-        chunksize = utilities.get_chunksize(total)
-        for index, item in enumerate(pool.imap_unordered(ImageDatabase.load_one_image, images, chunksize=chunksize)):
-            database.images.append(item)
-            print('\r >>> {} / {} => {}%'.format(index + 1, total, (math.ceil((index + 1) / total * 100))), end='')
+        # pool = Pool(processes=os.cpu_count())
+        # chunksize = utilities.get_chunksize(total)
+        # for index, item in enumerate(pool.imap_unordered(ImageDatabase.load_one_image, images, chunksize=chunksize)):
+        #     database.images.append(item)
+        #     print('\r >>> {} / {} => {}%'.format(index + 1, total, (math.ceil((index + 1) / total * 100))), end='')
 
-        # for index, image in enumerate(images):
-        #     with open(image, 'rb') as f:
-        #         database.images.append(pickle.load(f))
-        #         print('\r >>> {} / {} => {}%'.format(index+1, total, (math.ceil((index+1) / total * 100))), end='')
+        for index, image in enumerate(images):
+            with open(image, 'rb') as f:
+                database.images.append(pickle.load(f))
+                print('\r >>> {} / {} => {}%'.format(index+1, total, (math.ceil((index+1) / total * 100))), end='')
 
         print(' done: {}s'.format(time.time() - start_time))
 
