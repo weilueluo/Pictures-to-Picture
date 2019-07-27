@@ -42,17 +42,11 @@ class ImageItem(object):
     @staticmethod
     def _get_avg(image):
         bands = image.getdata()
-        r_sum = 0
-        g_sum = 0
-        b_sum = 0
-        for band in bands:
-            r_sum += band[0]
-            g_sum += band[1]
-            b_sum += band[2]
+        sums = [sum(x) for x in zip(*bands)]
         total = len(bands)
-        r_avg = r_sum // total
-        g_avg = g_sum // total
-        b_avg = b_sum // total
+        r_avg = sums[0] // total
+        g_avg = sums[1] // total
+        b_avg = sums[2] // total
 
         return r_avg, g_avg, b_avg
 
@@ -214,16 +208,17 @@ class ImageDatabase(object):
         images = glob(image_folder + '/*' + postfix)
         total = len(images)
 
-        # pool = Pool(processes=os.cpu_count())
-        # chunksize = utilities.get_chunksize(total)
-        # for index, item in enumerate(pool.imap_unordered(ImageDatabase.load_one_image, images, chunksize=chunksize)):
-        #     database.images.append(item)
-        #     print('\r >>> {} / {} => {}%'.format(index + 1, total, (math.ceil((index + 1) / total * 100))), end='')
+        pool = Pool(processes=os.cpu_count())
+        chunksize = utilities.get_chunksize(total)
+        print('\r >>> {} / {} => {}%'.format(0, total, 0), end='')
+        for index, item in enumerate(pool.imap_unordered(ImageDatabase.load_one_image, images, chunksize=chunksize)):
+            database.images.append(item)
+            print('\r >>> {} / {} => {}%'.format(index + 1, total, (math.ceil((index + 1) / total * 100))), end='')
 
-        for index, image in enumerate(images):
-            with open(image, 'rb') as f:
-                database.images.append(pickle.load(f))
-                print('\r >>> {} / {} => {}%'.format(index+1, total, (math.ceil((index+1) / total * 100))), end='')
+        # for index, image in enumerate(images):
+        #     with open(image, 'rb') as f:
+        #         database.images.append(pickle.load(f))
+        #         print('\r >>> {} / {} => {}%'.format(index+1, total, (math.ceil((index+1) / total * 100))), end='')
 
         print(' done: {}s'.format(time.time() - start_time))
 

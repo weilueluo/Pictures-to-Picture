@@ -24,6 +24,7 @@ def _load_database(folder, size, repeat, pieces_required):
             # try to load existing database
             print('Attempting to load database from folder: {}'.format(database_folder))
             existing_database = ImageDatabase.load(database_folder)
+            existing_database.crop(size, size)
 
             number_of_images_in_existing_database = existing_database.images_size
 
@@ -33,6 +34,11 @@ def _load_database(folder, size, repeat, pieces_required):
 
             number_of_images_in_specified_folder = len(glob(folder + '/*[jpg|png]'))
 
+            if number_of_images_in_existing_database == number_of_images_in_specified_folder \
+                    and settings.ALLOW_USE_EXISING_IF_SEEM_SAME:
+                print('Existing database seem to be coherent {} == {}'.format(number_of_images_in_specified_folder,
+                                                                              number_of_images_in_existing_database))
+                return existing_database
             # ask if they want to use the existing database
             while True:
                 ans = input('Existing database found with size requirement satisfied, ' + os.linesep +
@@ -40,7 +46,6 @@ def _load_database(folder, size, repeat, pieces_required):
                                 number_of_images_in_existing_database,
                                 number_of_images_in_specified_folder))
                 if ans == 'y':
-                    existing_database.crop(size, size)
                     return existing_database
                 elif ans == 'n':
                     break
@@ -118,18 +123,19 @@ def main():
 
     parser = argparse.ArgumentParser(description='build image from images')
     parser.add_argument('source', help='the image to stimulate')
-    parser.add_argument('folder', help='the folder containing images used to stimulate the source')
-    parser.add_argument('destination', help='the base name of the output file, not including extension')
     parser.add_argument('size', type=int, help='the size of each pieces')
+    parser.add_argument('folder', help='the folder containing images used to stimulate the source')
+    parser.add_argument('dest', help='the base name of the output file, not including extension')
     parser.add_argument('-r', '--repeat', action='store_true', help='allow build with repeating images')
     args = parser.parse_args()
 
     input_file = args.source
-    output_file = args.destination + '{}.jpg'
+    output_file = args.dest + '{}.jpg'
     database_folder = args.folder
     src = Image.open(input_file)
     background = make_from(src, database_folder, args.size, use_repeat=args.repeat)
-    background.save(args.destination + '_background_{}.jpg'.format('repeat' if args.repeat else 'no_repeat'))
+
+    background.save(args.dest + '_background_{}.jpg'.format('repeat' if args.repeat else 'no_repeat'))
     print('Creating different blended image')
     for blend_percent in range(0, 10):
         blend_percent = blend_percent / 10

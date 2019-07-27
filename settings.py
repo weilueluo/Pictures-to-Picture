@@ -6,3 +6,5 @@ DATABASE_FILE = 'database'
 POSTFIX = 'data'
 
 DATABASE_FOLDER = '{folder}_database'
+
+ALLOW_USE_EXISING_IF_SEEM_SAME = True
