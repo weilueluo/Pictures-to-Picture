@@ -4,11 +4,11 @@
 ##### just requests for images if you want me to do it for you :D
 ##### not too much plz :/
 ---
-> # Rem is so cute
-> - Resolution: 1000 x 1426
-> - Images used: 4556
-> - Database size: 14404
+> # Abigail Williams is so cute
+> - Resolution: 1150 x 2046
+> - Images used: 10549
+> - Database size: 25277
 > - Repeat images: no
 ---
-![alt text](https://github.com/Redcxx/Picture-From-Pictures/blob/master/img_out_0.6.jpg "background 0.6 blended")
+![picture_out__background_no_repeat.jpg](https://github.com/Redcxx/Picture-From-Pictures/blob/master/picture_out__background_no_repeat.jpg "picture_out__background_no_repeat")
 
