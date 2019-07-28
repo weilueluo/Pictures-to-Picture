@@ -10,5 +10,5 @@
 > - Repeat images: no
 > - Blending: 0%
 ---
-![picture_out__background_no_repeat.jpg](https://github.com/Redcxx/Picture-From-Pictures/blob/master/picture_out__background_no_repeat.jpg "picture_out__background_no_repeat")
+![picture_out__background_no_repeat.jpg](https://github.com/Redcxx/Pictures-to-Picture/blob/master/picture_output/background_no_repeat.jpg "picture_out__background_no_repeat")
 
