@@ -4,8 +4,8 @@
 ##### just requests for images if you want me to do it for you :D
 ##### not too much plz :/
 ---
-> - Resolution: 3008 x 2124
-> - Images used: 7171
+> - Resolution: 1150 x 2046
+> - Images used: 10364
 > - Database size: 33306
 > - Repeat images: no
 > - Blending: 0%
