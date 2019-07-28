@@ -1,48 +1,33 @@
 import os
-import math
+from itertools import repeat
+
 import settings
+import numpy as np
 import time
 import utilities
-import pickle
+import math
 from glob import glob
 from PIL import Image
 from multiprocessing import Pool
-from itertools import repeat
 
 
 class ImageItem(object):
-    """
-    Variables:
-        self.img
-        self.big_img
-        self.avg_r
-        self.avg_g
-        self.avg_b
-        self.filename
 
-    Class Methods:
-        factory(inputs)
-
-    Instance Methods:
-        crop(self, width, height)
-    """
-
-    def __init__(self, image, width=settings.DATABASE_IMG_SIZE, height=settings.DATABASE_IMG_SIZE):
+    def __init__(self, image, width, height):
         if isinstance(image, Image.Image):
             img = image
-            self.filename = None
+        elif isinstance(image, DatabaseImageItem):
+            img = image.big_image
         else:
-            img = Image.open(image).convert('RGB')
-            self.filename = image
+            img = Image.open(image)
 
-        self.img = img.resize((width, height))
-        self.big_img = img.resize((settings.DATABASE_IMG_SIZE, settings.DATABASE_IMG_SIZE))
+        self.img = img.resize((width, height)).convert('RGB')
         self.avg_r, self.avg_g, self.avg_b = ImageItem._get_avg(self.img)
 
     @staticmethod
     def _get_avg(image):
-        bands = image.getdata()
-        sums = [sum(x) for x in zip(*bands)]
+        bands = np.array(image.getdata())
+        sums = np.sum(bands, axis=0)
         total = len(bands)
         r_avg = sums[0] // total
         g_avg = sums[1] // total
@@ -50,177 +35,150 @@ class ImageItem(object):
 
         return r_avg, g_avg, b_avg
 
-    @staticmethod
-    def factory(inputs):
-        return ImageItem(inputs[0], inputs[1], inputs[2])
+    # @staticmethod
+    # def factory(inputs):
+    #     return ImageItem(inputs[0], inputs[1], inputs[2])
+    #
+    # def crop(self, width, height):
+    #     self.img = self.big_img.resize((width, height))
+    #
+    # @staticmethod
+    # def save(image, filename):
+    #     with open(filename, 'wb') as file:
+    #         pickle.dump(image, file, protocol=pickle.HIGHEST_PROTOCOL)
 
-    def crop(self, width, height):
-        if width > self.big_img.width or height > self.big_img.height:
-            print(' ### cropping size is larger than big_img size: {} {} < {} {}'.format(self.big_img.width,
-                                                                                         self.big_img.height, width,
-                                                                                         height))
-        self.img = self.big_img.resize((width, height))
+
+class DatabaseImageItem(object):
+
+    def __init__(self, filename):
+        self.filename = filename
+        self.big_image = Image.open(filename).resize((settings.DATABASE_IMAGE_WIDTH, settings.DATABASE_IMAGE_HEIGHT))
+
+    @staticmethod
+    def save(image, structure):
+        filename = structure.get_image_filename(image.filename)
+        utilities.save(image, filename)
 
 
 class ImageDatabase(object):
-    """
-    self.width
-    self.height
-    self.curr_sort_object
-    self.files
-    self.images
-    self.images_size
-    self.files_size
-
-    self.__init__(self, width, height)
-    self.add_files(self, folder)
-    self.get_unprocessed_files(self)
-    self.process_files(self)
-    self.find_closest(self, other)
-    self.remove(self, img)
-    self.add_img(self, img)
-    """
-
     # DO NOT SORT TWO DATABASE AT THE SAME TIME, (that is, find closest method)
     curr_sort_object = None
 
-    def __init__(self, width, height):
+    def __init__(self, width, height, folder):
         self.width = width
         self.height = height
-        self.files = []
         self.images = []
-        print('Database created with size {} {}'.format(width, height))
+        self.source_folder = folder
+        self.files = glob(self.source_folder + '/*[jpg|png]')
+        self.structure = utilities.get_database_structure(self.source_folder)
+        self.database_folder = self.structure.folder
+        print('Database {} {}'.format(width, height))
 
-    def add_files(self, folder):
-        print('Adding files from {} to database ... '.format(str(folder)), end='')
-        self.files += glob(str(folder) + '/*[jpg|png]')
-        self.files = list(set(self.files))
-        print('done', self.files_size)
+    # def import_files(self, folder):
+    #     self.files = list(set(self.files))
+    #     self.folder = utilities.clean_filename(folder)
+    #     print('Imported [{}] files from [{}]'.format(len(self.files), str(folder)))
 
-    @staticmethod
-    def _sort_by_avg_rgb_diff(img):
-        # https://en.wikipedia.org/wiki/Color_difference
-        # Euclidean Formula
-        sum = pow(img.avg_r - ImageDatabase.curr_sort_object.avg_r, 2) \
-              + pow(img.avg_g - ImageDatabase.curr_sort_object.avg_g, 2) \
-              + pow(img.avg_b - ImageDatabase.curr_sort_object.avg_b, 2)
-        return pow(sum, 0.5)
+    # @staticmethod
+    # def _sort_by_avg_rgb_diff(img):
+    #     # https://en.wikipedia.org/wiki/Color_difference
+    #     # Euclidean Formula
+    #     total = pow(img.avg_r - ImageDatabase.curr_sort_object.avg_r, 2) \
+    #           + pow(img.avg_g - ImageDatabase.curr_sort_object.avg_g, 2) \
+    #           + pow(img.avg_b - ImageDatabase.curr_sort_object.avg_b, 2)
+    #     return pow(total, 0.5)
 
-    def get_unprocessed_files(self):
-        processed_files = [img.filename for img in self.images]
-        unprocessed_files = [file for file in self.files if file not in processed_files]
-        return unprocessed_files
+    # for multiprocessing
+    # @staticmethod
+    # def _process_and_save_file(inputs):
+    #     database_item = DatabaseImageItem(inputs[0])  # file
+    #     DatabaseImageItem.save(database_item, inputs[1])  # structure
+    #     return ImageItem(database_item, inputs[2], inputs[3])  # width and height
 
-    def process_files(self):
+    def process_and_save_files(self):
         """
-        process files in self.files which not in filenames of self.imgs
+        process files in self.files, according to its width and height
         :return: None
         """
-        files = self.get_unprocessed_files()
-        total = len(files)
-        chunksize = utilities.get_chunksize(total)
-        pool = Pool(processes=os.cpu_count())
-        print('Processing files {} | size per % {}'.format(total, chunksize))
-        # Turn all files to ImageItem Object
-        print(' >>> {} / {} => {}%'.format(0, total, 0), end='')
-        for index, item in enumerate(
-                pool.imap_unordered(ImageItem.factory, zip(files, repeat(self.width), repeat(self.height)), chunksize)):
-            print('\r >>> {} / {} => {}%'.format(index+1, total, math.ceil(((index+1) / total) * 100)), end='')
-            self.images.append(item)
-        print(' done')
+        print('Processing and saving files ...')
+        start_time = time.time()
+        self.structure.make_folders()
+        self.images = []
+        # pool = Pool(processes=os.cpu_count())
+        total = len(self.files)
+        # chunksize = utilities.get_chunksize(total)
+        print('\r >>> waiting for arrival of chunks ...')
+        # for index, image_item in enumerate(pool.imap_unordered(ImageDatabase._process_and_save_file, zip(self.files, repeat(self.structure), repeat(self.width), repeat(self.height)), chunksize=chunksize)):
+        #     self.images.append(image_item)
+        #     print('\r >>> {} / {} => {}%'.format(index+1, total, math.ceil(((index+1) / total) * 100)), end='')
+        # print(' done: {}s'.format(time.time() - start_time))
+        files_chunks =[]
+        start = 0
+        while start < total-1:
+            end = start + 1000
+            files_chunks.append(self.files[start:end])
+            start = end
+
+        for chunk_index, chunk in enumerate(files_chunks):
+            processed_images = []
+            total_files = len(chunk)
+            for file_index, file in enumerate(chunk):
+                database_item = DatabaseImageItem(file)
+                processed_images.append(database_item)
+                self.images.append(ImageItem(database_item, self.width, self.height))
+                print('\r >>> {} / {} => {}%'.format(file_index+1, total_files, math.ceil((file_index+1) / total_files * 100)), end='')
+            utilities.save(processed_images, self.structure.get_list_name(chunk_index))
+            print(' ==> saved {} / {} chunks'.format(chunk_index+1, len(files_chunks)))
+        print('done {}s'.format(time.time() - start_time))
+
+    @staticmethod
+    def _get_difference(image):
+        # https://en.wikipedia.org/wiki/Color_difference
+        # Euclidean Formula
+        other = ImageDatabase.curr_sort_object
+        return ((image.avg_r - other.avg_r) ** 2 + (image.avg_g - other.avg_g) ** 2 + (
+                image.avg_b - other.avg_b) ** 2) ** 0.5
 
     def find_closest(self, other):
         other = ImageItem(other, self.width, self.height)
         ImageDatabase.curr_sort_object = other
-        self.images.sort(key=ImageDatabase._sort_by_avg_rgb_diff)
-        ImageDatabase.curr_sort_object = None
-        return self.images[0]
+        return min(self.images, key=ImageDatabase._get_difference)
+        # self.images.sort(key=lambda image: ImageDatabase._get_difference(image, other))
+        # return self.images[0]
 
     def remove(self, img):
         self.images.remove(img)
 
-    @property
-    def files_size(self):
-        return len(self.files)
-
-    @property
-    def images_size(self):
-        return len(self.images)
-
-    def crop(self, width, height):
-        print('Re-adjusting database images ...')
-        total = self.images_size
-        cropped_imgs = []
-        for index, img in enumerate(self.images):
-            img.crop(width, height)
-            cropped_imgs.append(img)
-            print('\r >>> {} / {} => {}%'.format(index + 1, total,
-                                                 math.ceil(((index + 1) / total) * 100)), end='')
-        self.images = cropped_imgs
-        self.width = width
-        self.height = height
-        print(' done')
-
-    def add(self, img):
-        self.images.append(img)
+    @staticmethod
+    def _load(inputs):
+        return ImageItem(utilities.load(inputs[0]), inputs[1], inputs[2])  # file width and height
 
     @staticmethod
-    def save(database, folder):
-        folder = str(folder)
-        image_folder = folder + '/' + settings.IMAGES_FOLDER
-        database_file = folder + '/' + settings.DATABASE_FILE
-        postfix = settings.POSTFIX
+    def load(folder, width, height):
 
-        if not os.path.isdir(folder):
-            os.mkdir(folder)
-        if not os.path.isdir(image_folder):
-            os.mkdir(image_folder)
+        print('Loading database from {}'.format(folder))
 
-        for image in database.images:
-            filename = image_folder + '/' + utilities.clean_filename(image.filename) + '.' + postfix
-            with open(filename, 'wb') as file:
-                pickle.dump(image, file)
+        database_structure = utilities.get_database_structure(folder)
 
-        database.images = []
+        database = ImageDatabase(width, height, folder)
 
-        with open(database_file, 'wb') as f:
-            pickle.dump(database, f)
-
-    @staticmethod
-    def load_one_image(file):
-        with open(file, 'rb') as f:
-            return pickle.load(f)
-
-    @staticmethod
-    def load(folder):
-        if not os.path.isdir(folder):
-            raise pickle.PicklingError('specified database does not exists')
-
-        folder = str(folder)
-        image_folder = folder + '/' + settings.IMAGES_FOLDER
-        database_file = folder + '/' + settings.DATABASE_FILE
-        postfix = settings.POSTFIX
-        with open(database_file, 'rb') as f:
-            database = pickle.load(f)
-
-        print('Loading existing Images ...')
         start_time = time.time()
-        images = glob(image_folder + '/*' + postfix)
-        total = len(images)
+        chunks = database_structure.get_list_names()
+        total = len(chunks)
 
-        pool = Pool(processes=os.cpu_count())
-        chunksize = utilities.get_chunksize(total)
-        print('\r >>> {} / {} => {}%'.format(0, total, 0), end='')
-        for index, item in enumerate(pool.imap_unordered(ImageDatabase.load_one_image, images, chunksize=chunksize)):
-            database.images.append(item)
-            print('\r >>> {} / {} => {}%'.format(index + 1, total, (math.ceil((index + 1) / total * 100))), end='')
-
-        # for index, image in enumerate(images):
-        #     with open(image, 'rb') as f:
-        #         database.images.append(pickle.load(f))
-        #         print('\r >>> {} / {} => {}%'.format(index+1, total, (math.ceil((index+1) / total * 100))), end='')
-
-        print(' done: {}s'.format(time.time() - start_time))
+        print('Loading {} chunks from {}'.format(total, database_structure.image_folder))
+        # pool = Pool(processes=os.cpu_count())
+        # chunksize = utilities.get_chunksize(total)
+        # print('\r >>> waiting for arrival of chunks ...')
+        # for index, image_item in enumerate(pool.imap_unordered(ImageDatabase._load, zip(images, repeat(database.width), repeat(database.height)), chunksize=chunksize)):
+        #     database.images.append(image_item)
+        #     print('\r >>> {} / {} => {}%'.format(index + 1, total, math.ceil(((index + 1) / total) * 100)), end='')
+        #
+        # print(' done: {}s'.format(time.time() - start_time))
+        for index, chunk in enumerate(chunks):
+            chunk_list = utilities.load(chunk)
+            database.images += [ImageItem(item, database.height, database.width) for item in chunk_list]
+            print('\r >>> {} / {}'.format(index+1, total), end='')
+        print(' done {}s'.format(time.time() - start_time))
 
         return database
-

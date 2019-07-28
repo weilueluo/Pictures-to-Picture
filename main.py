@@ -10,23 +10,24 @@ import pickle
 from glob import glob
 import math
 import time
+import utilities
 
 sys.stdout.reconfigure(encoding='utf-8')
 
 
 def _load_database(folder, size, repeat, pieces_required):
 
-    database_folder = settings.DATABASE_FOLDER.format(folder=folder)
+    database_folder = utilities.get_database_structure(folder).folder
 
     # first, try load from existing database if exists
-    if os.path.isdir(database_folder) and size < settings.DATABASE_IMG_SIZE:
+    if os.path.isdir(database_folder) and (
+            size < settings.DATABASE_IMAGE_WIDTH or size < settings.DATABASE_IMAGE_HEIGHT):
         try:
             # try to load existing database
             print('Attempting to load database from folder: {}'.format(database_folder))
-            existing_database = ImageDatabase.load(database_folder)
-            existing_database.crop(size, size)
+            existing_database = ImageDatabase.load(folder, size, size)
 
-            number_of_images_in_existing_database = existing_database.images_size
+            number_of_images_in_existing_database = len(existing_database.images)
 
             if not repeat and number_of_images_in_existing_database < pieces_required:
                 raise ValueError('Existing database does not contain enough pictures: {} < {}'.format(
@@ -56,32 +57,29 @@ def _load_database(folder, size, repeat, pieces_required):
         except ValueError as e:
             print(e)
 
+    #
+    # database folder does not exists or user wants to create new database
+    #
     print('Creating new database from folder: {}'.format(folder))
 
-    database = ImageDatabase(size, size)
-    database.add_files(folder)
-    files_found = database.files_size
+    database = ImageDatabase(size, size, folder)
+
+    files_found = len(database.files)
 
     if not repeat and pieces_required > files_found:
         raise ValueError('Number of pictures in folder {} is not enough: {} < {}'.format(folder, files_found, pieces_required))
 
     start_time = time.time()
-    database.process_files()
+    database.process_and_save_files()
     end_time = time.time()
     print('Time taken:', str(end_time - start_time) + 's')
-
-    try:
-        ImageDatabase.save(database, database_folder)
-        print('database saved as:', database_folder)
-    except pickle.UnpicklingError as e:
-        print('failed to save database:', database_folder)
 
     return database
 
 
-def make_from(img, folder, size, use_repeat=True):
+def make_from(source, folder, size, use_repeat=True):
 
-    width, height = img.size
+    width, height = source.size
     pieces_required = math.ceil(width / size) * math.ceil(height / size)
 
     print('result dimension:', width, height)
@@ -95,7 +93,7 @@ def make_from(img, folder, size, use_repeat=True):
     database = _load_database(folder, size, use_repeat, pieces_required)
 
     chunk_count = 0
-    background = Image.new('RGB', img.size, 'black')
+    background = Image.new(source.mode, source.size, 'black')
     print('building image from database ...')
     start_time = time.time()
     for h in range(0, height, size):
@@ -106,7 +104,7 @@ def make_from(img, folder, size, use_repeat=True):
                 btmx = width
             if btmy > height:
                 btmy = height
-            curr_chunk = img.crop((w, h, btmx, btmy))
+            curr_chunk = source.crop((w, h, btmx, btmy))
             best_match = database.find_closest(curr_chunk)
             background.paste(best_match.img, (w, h))
             if not use_repeat:
@@ -130,19 +128,26 @@ def main():
     args = parser.parse_args()
 
     input_file = args.source
-    output_file = args.dest + '{}.jpg'
     database_folder = args.folder
-    src = Image.open(input_file)
-    background = make_from(src, database_folder, args.size, use_repeat=args.repeat)
+    source = Image.open(input_file).convert('RGB')
+    background = make_from(source, database_folder, args.size, use_repeat=args.repeat)
 
-    background.save(args.dest + '_background_{}.jpg'.format('repeat' if args.repeat else 'no_repeat'))
-    print('Creating different blended image')
+    print('Blending & saving images ...')
+
+    folder = args.dest
+    if not os.path.isdir(folder):
+        os.mkdir(folder)
+
+    background_file = folder + '/background_{}.jpg'
+    background.save(background_file.format('repeat' if args.repeat else 'no_repeat'))
+
+    output_file = folder + '/{}.jpg'
     for blend_percent in range(0, 10):
         blend_percent = blend_percent / 10
-        image = Image.blend(src, background, blend_percent)
+        image = Image.blend(source, background, blend_percent)
         image.save(output_file.format(blend_percent))
         print('\r {}'.format(blend_percent), end='')
-    print(' done =>', output_file)
+    print(' done =>', folder)
 
 
 if __name__ == '__main__':

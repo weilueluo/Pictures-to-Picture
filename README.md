@@ -4,10 +4,9 @@
 ##### just requests for images if you want me to do it for you :D
 ##### not too much plz :/
 ---
-> # Abigail Williams is so cute
-> - Resolution: 1150 x 2046
-> - Images used: 10549
-> - Database size: 25277
+> - Resolution: 3008 x 2124
+> - Images used: 7171
+> - Database size: 33306
 > - Repeat images: no
 > - Blending: 0%
 ---
