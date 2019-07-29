@@ -102,12 +102,12 @@ class ImageDatabase(object):
         """
         print('Processing and saving files ...')
         start_time = time.time()
+        self.structure.remove_existing_files()
         self.structure.make_folders()
         self.images = []
         # pool = Pool(processes=os.cpu_count())
         total = len(self.files)
         # chunksize = utilities.get_chunksize(total)
-        print('\r >>> waiting for arrival of chunks ...')
         # for index, image_item in enumerate(pool.imap_unordered(ImageDatabase._process_and_save_file, zip(self.files, repeat(self.structure), repeat(self.width), repeat(self.height)), chunksize=chunksize)):
         #     self.images.append(image_item)
         #     print('\r >>> {} / {} => {}%'.format(index+1, total, math.ceil(((index+1) / total) * 100)), end='')
@@ -115,10 +115,11 @@ class ImageDatabase(object):
         files_chunks =[]
         start = 0
         while start < total-1:
-            end = start + 1000
+            end = start + settings.MAX_CACHE_PROCESSED_IMAGES
             files_chunks.append(self.files[start:end])
             start = end
 
+        total_chunks = len(files_chunks)
         for chunk_index, chunk in enumerate(files_chunks):
             processed_images = []
             total_files = len(chunk)
@@ -126,9 +127,8 @@ class ImageDatabase(object):
                 database_item = DatabaseImageItem(file)
                 processed_images.append(database_item)
                 self.images.append(ImageItem(database_item, self.width, self.height))
-                print('\r >>> {} / {} => {}%'.format(file_index+1, total_files, math.ceil((file_index+1) / total_files * 100)), end='')
+                print('\r >>> {} / {} => {}% ==> saved {} / {} chunks'.format(file_index+1, total_files, math.ceil((file_index+1) / total_files * 100), chunk_index+1, total_chunks), end='')
             utilities.save(processed_images, self.structure.get_list_name(chunk_index))
-            print(' ==> saved {} / {} chunks'.format(chunk_index+1, len(files_chunks)))
         print('done {}s'.format(time.time() - start_time))
 
     @staticmethod

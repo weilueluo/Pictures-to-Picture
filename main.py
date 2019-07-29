@@ -56,6 +56,8 @@ def _load_database(folder, size, repeat, pieces_required):
             print('Failed to load existing database: {}'.format(database_folder))
         except ValueError as e:
             print(e)
+        except EOFError:
+            print('Data is corrputed in existing database {}'.format(database_folder))
 
     #
     # database folder does not exists or user wants to create new database

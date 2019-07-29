@@ -5,6 +5,7 @@ import os
 from multiprocessing import current_process, Process
 from threading import Thread
 from glob import glob
+import shutil
 
 import settings
 
@@ -35,8 +36,8 @@ class DatabaseStructure(object):
     """
 
     def __init__(self, folder):
-        self.folder = settings.DATABASE_FOLDER.format(folder=folder)
-        self.image_folder = self.folder + '/' + settings.IMAGES_FOLDER
+        self.folder = clean_filename(settings.DATABASE_FOLDER.format(folder=folder))
+        self.image_folder = self.folder + '/' + clean_filename(settings.IMAGES_FOLDER)
         self.postfix = settings.POSTFIX
 
     def get_image_filename(self, image_name):
@@ -53,6 +54,9 @@ class DatabaseStructure(object):
 
     def get_list_names(self):
         return glob(self.image_folder + '/*' + self.postfix)
+
+    def remove_existing_files(self):
+        shutil.rmtree(self.folder)
 
 def get_database_structure(folder):
     return DatabaseStructure(folder)
