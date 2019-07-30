@@ -1,5 +1,3 @@
-
-
 import argparse
 import sys
 from items import ImageDatabase
@@ -16,7 +14,6 @@ sys.stdout.reconfigure(encoding='utf-8')
 
 
 def _load_database(folder, size, repeat, pieces_required):
-
     database_folder = utilities.get_database_structure(folder).folder
 
     # first, try load from existing database if exists
@@ -69,7 +66,15 @@ def _load_database(folder, size, repeat, pieces_required):
     files_found = len(database.files)
 
     if not repeat and pieces_required > files_found:
-        raise ValueError('Number of pictures in folder {} is not enough: {} < {}'.format(folder, files_found, pieces_required))
+        raise ValueError(
+            'Number of pictures in folder {} is not enough: {} < {}'.format(folder, files_found, pieces_required))
+
+    if settings.MAX_CHUNKS_USE:
+        limited_pieces = settings.MAX_CHUNKS_USE * settings.MAX_CACHE_PROCESSED_IMAGES
+        if not repeat and pieces_required > limited_pieces:
+            raise ValueError(
+                'Number of pictures limited {} is not enough: {} < {}, try to increase settings.MAX_CHUNKS_USE'.format(
+                    folder, limited_pieces, pieces_required))
 
     start_time = time.time()
     database.process_and_save_files()
@@ -80,8 +85,11 @@ def _load_database(folder, size, repeat, pieces_required):
 
 
 def make_from(source, folder, size, use_repeat=True):
+    src_width, src_height = source.size
+    width = int(src_width * settings.ORIGINAL_IMAGE_SIZE_FACTOR)
+    height = int(src_height * settings.ORIGINAL_IMAGE_SIZE_FACTOR)
+    source = source.resize((width, height))
 
-    width, height = source.size
     pieces_required = math.ceil(width / size) * math.ceil(height / size)
 
     print('result dimension:', width, height)
@@ -93,6 +101,7 @@ def make_from(source, folder, size, use_repeat=True):
             width, height, size))
 
     database = _load_database(folder, size, use_repeat, pieces_required)
+    database.process_images()
 
     chunk_count = 0
     background = Image.new(source.mode, source.size, 'black')
@@ -107,20 +116,16 @@ def make_from(source, folder, size, use_repeat=True):
             if btmy > height:
                 btmy = height
             curr_chunk = source.crop((w, h, btmx, btmy))
-            best_match = database.find_closest(curr_chunk)
-            background.paste(best_match.img, (w, h))
-            if not use_repeat:
-                # remove used images
-                database.remove(best_match)
+            best_match = database.find_closest(curr_chunk, use_repeat, method=settings.COLOR_DIFF_METHOD)
+            background.paste(best_match, (w, h))
             chunk_count += 1
-            print('\r >>>', chunk_count, '/' , pieces_required, '=> {}%'.format(math.ceil(chunk_count / pieces_required * 100)),  end='')
-    print(' done: {}s'.format(time.time() - start_time))
+            utilities.print_progress(chunk_count, pieces_required)
+    utilities.print_done(time.time() - start_time)
 
-    return background
+    return source, background
 
 
 def main():
-
     parser = argparse.ArgumentParser(description='build image from images')
     parser.add_argument('source', help='the image to stimulate')
     parser.add_argument('size', type=int, help='the size of each pieces')
@@ -132,7 +137,7 @@ def main():
     input_file = args.source
     database_folder = args.folder
     source = Image.open(input_file).convert('RGB')
-    background = make_from(source, database_folder, args.size, use_repeat=args.repeat)
+    source, background = make_from(source, database_folder, args.size, use_repeat=args.repeat)
 
     print('Blending & saving images ...')
 

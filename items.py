@@ -35,18 +35,6 @@ class ImageItem(object):
 
         return r_avg, g_avg, b_avg
 
-    # @staticmethod
-    # def factory(inputs):
-    #     return ImageItem(inputs[0], inputs[1], inputs[2])
-    #
-    # def crop(self, width, height):
-    #     self.img = self.big_img.resize((width, height))
-    #
-    # @staticmethod
-    # def save(image, filename):
-    #     with open(filename, 'wb') as file:
-    #         pickle.dump(image, file, protocol=pickle.HIGHEST_PROTOCOL)
-
 
 class DatabaseImageItem(object):
 
@@ -67,33 +55,26 @@ class ImageDatabase(object):
     def __init__(self, width, height, folder):
         self.width = width
         self.height = height
-        self.images = []
+        self.images = None
         self.source_folder = folder
         self.files = glob(self.source_folder + '/*[jpg|png]')
         self.structure = utilities.get_database_structure(self.source_folder)
         self.database_folder = self.structure.folder
+        self.color_space = None
+        self.rgb_image_dict = None
         print('Database {} {}'.format(width, height))
 
-    # def import_files(self, folder):
-    #     self.files = list(set(self.files))
-    #     self.folder = utilities.clean_filename(folder)
-    #     print('Imported [{}] files from [{}]'.format(len(self.files), str(folder)))
+    def process_images(self):
+        print('Processing images ...', end='')
+        start_time = time.time()
+        if not self.images:
+            raise ValueError('Please call process_and_save_files first')
+        self.rgb_image_dict = dict()
+        for image in self.images:
+            self.rgb_image_dict[(image.avg_r, image.avg_g, image.avg_b)] = image.img
+        self.images = None
 
-    # @staticmethod
-    # def _sort_by_avg_rgb_diff(img):
-    #     # https://en.wikipedia.org/wiki/Color_difference
-    #     # Euclidean Formula
-    #     total = pow(img.avg_r - ImageDatabase.curr_sort_object.avg_r, 2) \
-    #           + pow(img.avg_g - ImageDatabase.curr_sort_object.avg_g, 2) \
-    #           + pow(img.avg_b - ImageDatabase.curr_sort_object.avg_b, 2)
-    #     return pow(total, 0.5)
-
-    # for multiprocessing
-    # @staticmethod
-    # def _process_and_save_file(inputs):
-    #     database_item = DatabaseImageItem(inputs[0])  # file
-    #     DatabaseImageItem.save(database_item, inputs[1])  # structure
-    #     return ImageItem(database_item, inputs[2], inputs[3])  # width and height
+        print(' [ done ] => {0:.2f}s'.format(time.time() - start_time))
 
     def process_and_save_files(self):
         """
@@ -105,16 +86,11 @@ class ImageDatabase(object):
         self.structure.remove_existing_files()
         self.structure.make_folders()
         self.images = []
-        # pool = Pool(processes=os.cpu_count())
+
         total = len(self.files)
-        # chunksize = utilities.get_chunksize(total)
-        # for index, image_item in enumerate(pool.imap_unordered(ImageDatabase._process_and_save_file, zip(self.files, repeat(self.structure), repeat(self.width), repeat(self.height)), chunksize=chunksize)):
-        #     self.images.append(image_item)
-        #     print('\r >>> {} / {} => {}%'.format(index+1, total, math.ceil(((index+1) / total) * 100)), end='')
-        # print(' done: {}s'.format(time.time() - start_time))
-        files_chunks =[]
+        files_chunks = []
         start = 0
-        while start < total-1:
+        while start < total - 1:
             end = start + settings.MAX_CACHE_PROCESSED_IMAGES
             files_chunks.append(self.files[start:end])
             start = end
@@ -127,27 +103,108 @@ class ImageDatabase(object):
                 database_item = DatabaseImageItem(file)
                 processed_images.append(database_item)
                 self.images.append(ImageItem(database_item, self.width, self.height))
-                print('\r >>> {} / {} => {}% ==> saved {} / {} chunks'.format(file_index+1, total_files, math.ceil((file_index+1) / total_files * 100), chunk_index+1, total_chunks), end='')
+                utilities.print_progress(file_index + 1, total_files, curr_chunk=chunk_index + 1,
+                                         total_chunks=total_chunks)
             utilities.save(processed_images, self.structure.get_list_name(chunk_index))
-        print('done {}s'.format(time.time() - start_time))
+        utilities.print_done(time.time() - start_time)
+
+    def generate_color_space(self):
+
+        if not self.rgb_image_dict:
+            raise ValueError('Please call process_images first')
+
+        total = len(self.rgb_image_dict)
+        print('Generating color space | {}'.format(total))
+        start_time = time.time()
+        color_space = [[[[] for _ in range(256)] for _ in range(256)] for _ in range(256)]  # 256 x 256 x 256 arrays
+        for index, item in enumerate(self.rgb_image_dict.items()):
+            r, g, b = item[0]
+            color_space[r][g][b].append(item[1])
+            utilities.print_progress(index + 1, total)
+        self.images = None
+        utilities.print_done(time.time() - start_time)
+        start_time = time.time()
+        print('cleaning color space ...', end='')
+        self.color_space = utilities.remove_empty(color_space)
+        print(' [ done ] => {0:.2f}s'.format(time.time() - start_time))
+
+    def find_by_color_space(self, other, use_repeat):
+        if not self.color_space:
+            self.generate_color_space()
+        return self.find_closest_in_color_space(other, use_repeat)
 
     @staticmethod
-    def _get_difference(image):
-        # https://en.wikipedia.org/wiki/Color_difference
-        # Euclidean Formula
-        other = ImageDatabase.curr_sort_object
-        return ((image.avg_r - other.avg_r) ** 2 + (image.avg_g - other.avg_g) ** 2 + (
-                image.avg_b - other.avg_b) ** 2) ** 0.5
+    def euclidean_dist(c1, c2):
+        r1, g1, b1 = c1
+        r2, g2, b2 = c2
+        return (r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2
 
-    def find_closest(self, other):
+    def find_by_euclidean_dist(self, other, use_repeat):
+        # https: // en.wikipedia.org / wiki / Color_difference
+        rgb = min(self.rgb_image_dict, key=lambda rgb: self.euclidean_dist(rgb, (other.avg_r, other.avg_g, other.avg_b)))
+        item = self.rgb_image_dict[rgb]
+        if not use_repeat:
+            del self.rgb_image_dict[rgb]
+        return item
+
+    @staticmethod
+    def euclidean_optimized_dist(c1, c2):
+        r1, g1, b1 = c1
+        r2, g2, b2 = c2
+        r_avg = (r1 + r2) / 2
+        r_diff = r1 - r2
+        g_diff = g1 - g2
+        b_diff = b1 - b2
+        return (2 + (r_avg / 256)) * (r_diff ** 2) + 4 * (g_diff ** 2) + (2 + ((255 - r_avg) / 256)) * (
+                    b_diff ** 2)
+
+    def find_by_euclidean_optimized_dist(self, other, use_repeat):
+        # https: // en.wikipedia.org / wiki / Color_difference
+        rgb = min(self.rgb_image_dict, key=lambda rgb: self.euclidean_optimized_dist(rgb, (other.avg_r, other.avg_g, other.avg_b)))
+        item = self.rgb_image_dict[rgb]
+        if not use_repeat:
+            del self.rgb_image_dict[rgb]
+        return item
+
+    color_diff_methods = {
+        'color space': 'find_by_color_space',
+        'euclidean': 'find_by_euclidean_dist',
+        'euclidean optimized': 'find_by_euclidean_optimized_dist',
+        'cie76': 'find_by_cie76',
+        'cie94': 'find_by_cie94',
+        'ciede2000': 'find_by_ciede2000',
+        'cmc': 'find_by_cmc'
+    }
+
+    def find_closest(self, other, use_repeat, method='euclidean_optimized'):
+        if not self.rgb_image_dict:
+            raise ValueError('Please call process_images first')
         other = ImageItem(other, self.width, self.height)
-        ImageDatabase.curr_sort_object = other
-        return min(self.images, key=ImageDatabase._get_difference)
-        # self.images.sort(key=lambda image: ImageDatabase._get_difference(image, other))
-        # return self.images[0]
+        return getattr(self, self.color_diff_methods[method])(other, use_repeat)
+
+    def find_closest_in_color_space(self, other, use_repeat):
+        R, G, B = other.avg_r, other.avg_g, other.avg_b
+
+        r = int(R / 255 * (len(self.color_space) - 1) + 0.5)
+        g = int(G / 255 * (len(self.color_space[r]) - 1) + 0.5)
+        b = int(B / 255 * (len(self.color_space[r][g]) - 1) + 0.5)
+        item = self.color_space[r][g][b][0]
+        if not use_repeat:
+            self.color_space[r][g][b].remove(item)
+            if not self.color_space[r][g][b]:
+                self.color_space[r][g].remove(self.color_space[r][g][b])
+                if not self.color_space[r][g]:
+                    self.color_space[r].remove(self.color_space[r][g])
+                    if not self.color_space[r]:
+                        self.color_space.remove(self.color_space[r])
+        return item
 
     def remove(self, img):
-        self.images.remove(img)
+        for three_d_array in self.color_space:
+            for two_d_array in three_d_array:
+                for array in two_d_array:
+                    if img in array:
+                        array.remove(img)
 
     @staticmethod
     def _load(inputs):
@@ -167,18 +224,14 @@ class ImageDatabase(object):
         total = len(chunks)
 
         print('Loading {} chunks from {}'.format(total, database_structure.image_folder))
-        # pool = Pool(processes=os.cpu_count())
-        # chunksize = utilities.get_chunksize(total)
-        # print('\r >>> waiting for arrival of chunks ...')
-        # for index, image_item in enumerate(pool.imap_unordered(ImageDatabase._load, zip(images, repeat(database.width), repeat(database.height)), chunksize=chunksize)):
-        #     database.images.append(image_item)
-        #     print('\r >>> {} / {} => {}%'.format(index + 1, total, math.ceil(((index + 1) / total) * 100)), end='')
-        #
-        # print(' done: {}s'.format(time.time() - start_time))
+
+        database.images = []
         for index, chunk in enumerate(chunks):
-            chunk_list = utilities.load(chunk)
-            database.images += [ImageItem(item, database.height, database.width) for item in chunk_list]
-            print('\r >>> {} / {}'.format(index+1, total), end='')
-        print(' done {}s'.format(time.time() - start_time))
+            database.images += [ImageItem(image, database.width, database.height) for image in utilities.load(chunk)]
+            utilities.print_progress(index + 1, total)
+            if settings.MAX_CHUNKS_USE and settings.MAX_CHUNKS_USE == index + 1:
+                print('Reached limit for max chunks use')
+                break
+        utilities.print_done(time.time() - start_time)
 
         return database
