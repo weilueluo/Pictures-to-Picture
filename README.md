@@ -1,4 +1,4 @@
-# Picture-From-Pictures
+# Pictures-To-Picture
 ---
 ### build a picture from other pictures xD
 ### First run is slow and as it will create a database in current directory, database settings available in settings.py. Subsequent run will be much faster
