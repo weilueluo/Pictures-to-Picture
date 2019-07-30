@@ -4,8 +4,9 @@
 ### First run is slow and as it will create a database in current directory, database settings available in settings.py. Subsequent run will be much faster
 ### just requests for images if you want me to do it for you :D, not too much plz :/
 ---
-> - Database size: 33306
+> - My database size: 33306
 > - Repeat images: no
+> - If you need anime pictures you can visit my Pixiv crawler project - [Pikax](https://github.com/Redcxx/Pikax)
 ---
 > - Resolution: 4600 x 8184
 > - [image source](https://twitter.com/sukemyon_443/status/1030028596339822594)
