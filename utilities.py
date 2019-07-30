@@ -80,7 +80,8 @@ is_first_print = True
 last_percent = None
 last_percent_time_left = None
 last_percent_print_time = None
-est_time_lefts = []
+est_time_lefts = [0, 0, 0]
+
 
 # est time left is very unaccurate
 def print_progress(curr, total, curr_chunk=None, total_chunks=None):
@@ -101,7 +102,8 @@ def print_progress(curr, total, curr_chunk=None, total_chunks=None):
     else:
         bad_est_time_left = (curr_time - last_percent_print_time) / (curr_percent - last_percent) * (100 - curr_percent)
         est_time_lefts.append(bad_est_time_left)
-        est_time_left = sum(est_time_lefts[-3:]) / (3 if len(est_time_lefts) >= 3 else len(est_time_lefts))
+        est_time_lefts = est_time_lefts[1:]
+        est_time_left = sum(est_time_lefts) / len(est_time_lefts)
         last_percent_time_left = est_time_left
         last_percent_print_time = curr_time
 
@@ -113,8 +115,11 @@ def print_progress(curr, total, curr_chunk=None, total_chunks=None):
         print(' | {} / {}'.format(curr_chunk, total_chunks), end='')
 
 
-def print_done(time_taken):
-    print(' [ done ] => {0:.2f}s'.format(time_taken))
+def print_done(msg):
+    if isinstance(msg, str):
+        print(' [ done ] => {msg}s'.format(msg=msg))
+    else:  # a float, time taken
+        print(' [ done ] => {0:.2f}s'.format(msg))
     global is_first_print
     global last_percent
     global last_percent_time_left
@@ -124,7 +129,8 @@ def print_done(time_taken):
     last_percent = None
     last_percent_print_time = None
     last_percent_time_left = None
-    est_time_lefts = []
+    est_time_lefts = [0, 0, 0]
+
 
 # def remove_empty(a_list):
 #     if not isinstance(a_list, list):

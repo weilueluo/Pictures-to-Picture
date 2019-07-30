@@ -2,20 +2,15 @@
 
 
 
-ORIGINAL_IMAGE_SIZE_FACTOR = 1
 
 ALLOW_USE_EXISING_IF_SEEM_SAME = True
 
-MIN_ITEMS_PER_THREAD = 10
-
-MAX_THREAD_PER_PROCESS = 1
-
-MAX_CHUNKS_USE = None  # or int
+MAX_CHUNKS_USE = None  # or (int) number of chunks to use, each chunk is same as MAX_CACHE_PROCESSED_IMAGES
 
 COLOR_DIFF_METHOD = 'euclidean'
 """
-'color space'  # very fast but not accurate at all
-'euclidean' 
+'color space'  # very fast but not accurate
+'euclidean'  # classic euclidean algorithm
 'euclidean optimized'  # slightly better than euclidean but much slower
 
 # not implemented yet
@@ -24,7 +19,7 @@ COLOR_DIFF_METHOD = 'euclidean'
 'ciede2000'
 'cmc'
 """
-# XXX if change variables below, it will re-create your database
+# XXX if change variables below, it may re-create your database
 
 IMAGES_FOLDER = 'images'
 DATABASE_FILE = 'database'

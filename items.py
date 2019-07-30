@@ -152,11 +152,8 @@ class ImageDatabase(object):
         r1, g1, b1 = c1
         r2, g2, b2 = c2
         r_avg = (r1 + r2) / 2
-        r_diff = r1 - r2
-        g_diff = g1 - g2
-        b_diff = b1 - b2
-        return (2 + (r_avg / 256)) * (r_diff ** 2) + 4 * (g_diff ** 2) + (2 + ((255 - r_avg) / 256)) * (
-                    b_diff ** 2)
+        return (2 + (r_avg / 256)) * ((r1 - r2) ** 2) + 4 * ((g1 - g2) ** 2) + (2 + ((255 - r_avg) / 256)) * (
+                    (b1 - b2) ** 2)
 
     def find_by_euclidean_optimized_dist(self, other, use_repeat):
         # https: // en.wikipedia.org / wiki / Color_difference
@@ -235,3 +232,10 @@ class ImageDatabase(object):
         utilities.print_done(time.time() - start_time)
 
         return database
+
+    @property
+    def size(self):
+        if self.rgb_image_dict:
+            return len(self.rgb_image_dict)
+        else:
+            raise ValueError('Please process images before calling .size')
