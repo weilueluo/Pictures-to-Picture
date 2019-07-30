@@ -1,8 +1,10 @@
 # Picture-From-Pictures
 
 ### build a picture from other pictures xD
-##### just requests for images if you want me to do it for you :D
-##### not too much plz :/
+#### just requests for images if you want me to do it for you :D
+#### not too much plz :/
+### First run is slow and as it will create a database in current directory, database settings available in settings.py
+### Subsequent run will be much faster
 > - Database size: 33306
 > - Repeat images: no
 ---
